@@ -128,38 +128,6 @@ export function CertificatesPhysics({
       const maxW = Math.min(380, Math.floor(width * 0.42));
       const cardW = clamp(Math.floor(rawW), 84, maxW);
 
-      for (let i = 0; i < certificates.length; i++) {
-        const c = certificates[i]!;
-        const { nw, nh } = await loadImageSize(c.src);
-        const aspect = nw / Math.max(1, nh);
-        const cardH = Math.round(cardW / clamp(aspect, 1.15, 2.1));
-        const x = clamp(
-          Math.floor(Math.random() * width),
-          Math.floor(cardW * 0.6),
-          Math.floor(width - cardW * 0.6)
-        );
-        const y = -50 - i * 12;
-        const angle = (Math.random() - 0.5) * 0.6;
-
-        const body = Bodies.rectangle(x, y, cardW, cardH, {
-          restitution: 0.15,
-          friction: 0.2,
-          frictionAir: 0.02,
-          density: 0.002,
-          angle,
-          chamfer: { radius: Math.max(6, Math.floor(cardW * 0.05)) },
-          render: {
-            sprite: {
-              texture: c.src,
-              xScale: cardW / nw,
-              yScale: cardH / nh,
-            },
-          },
-        });
-        (body as BodyWithCert).plugin = { certificate: c };
-        Composite.add(engine.world, body);
-      }
-
       const mouse = Mouse.create(render.canvas);
       const mouseConstraint = MouseConstraint.create(engine, {
         mouse,
@@ -245,8 +213,67 @@ export function CertificatesPhysics({
       Runner.run(runner, engine);
       setReady(true);
 
+      // Progressive spawn so the scene becomes interactive immediately.
+      let spawnAt = 0;
+      let spawnTimer: number | null = null;
+      const BATCH = 12;
+
+      const spawnNext = async () => {
+        if (cancelled) return;
+        const start = spawnAt;
+        if (start >= certificates.length) return;
+        const end = Math.min(start + BATCH, certificates.length);
+        spawnAt = end;
+
+        const slice = certificates.slice(start, end);
+        const sizes = await Promise.all(slice.map((c) => loadImageSize(c.src)));
+        if (cancelled) return;
+
+        for (let i = 0; i < slice.length; i++) {
+          const c = slice[i]!;
+          const { nw, nh } = sizes[i]!;
+          const aspect = nw / Math.max(1, nh);
+          const cardH = Math.round(cardW / clamp(aspect, 1.15, 2.1));
+
+          const x = clamp(
+            Math.floor(Math.random() * width),
+            Math.floor(cardW * 0.6),
+            Math.floor(width - cardW * 0.6)
+          );
+          const globalIndex = start + i;
+          const y = -50 - globalIndex * 12;
+          const angle = (Math.random() - 0.5) * 0.6;
+
+          const body = Bodies.rectangle(x, y, cardW, cardH, {
+            restitution: 0.15,
+            friction: 0.2,
+            frictionAir: 0.02,
+            density: 0.002,
+            angle,
+            chamfer: { radius: Math.max(6, Math.floor(cardW * 0.05)) },
+            render: {
+              sprite: {
+                texture: c.src,
+                xScale: cardW / nw,
+                yScale: cardH / nh,
+              },
+            },
+          });
+          (body as BodyWithCert).plugin = { certificate: c };
+          Composite.add(engine.world, body);
+        }
+
+        spawnTimer = window.setTimeout(() => {
+          spawnTimer = null;
+          void spawnNext();
+        }, 0);
+      };
+
+      void spawnNext();
+
       cleanup = () => {
         setReady(false);
+        if (spawnTimer != null) window.clearTimeout(spawnTimer);
         render.canvas.removeEventListener("pointerdown", onPointerDown);
         render.canvas.removeEventListener("pointerup", onPointerUp);
         Render.stop(render);
