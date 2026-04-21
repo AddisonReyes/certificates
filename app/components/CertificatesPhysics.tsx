@@ -437,7 +437,11 @@ export function CertificatesPhysics({
                 lineWidth: 1,
               },
             });
-            (body as BodyWithCert).plugin = { certificate: c, w: cardW, h: cardH };
+            (body as BodyWithCert).plugin = {
+              certificate: c,
+              w: cardW,
+              h: cardH,
+            };
             Composite.add(engine.world, body);
           }
 
@@ -451,11 +455,10 @@ export function CertificatesPhysics({
             spawnTimer = null;
             void spawnNext();
           }, INTERVAL_MS);
-          return;
         }
 
         const textures = slice.map((c) => spriteTexture(c.src));
-        let infos = await Promise.all(textures.map((t) => preloadTexture(t)));
+        const infos = await Promise.all(textures.map((t) => preloadTexture(t)));
         if (cancelled) return;
 
         for (let i = 0; i < slice.length; i++) {
@@ -528,7 +531,7 @@ export function CertificatesPhysics({
 
           const bodies = Composite.allBodies(engine.world);
           const anyAwake = bodies.some(
-            (b) => !b.isStatic && !(b as Matter.Body).isSleeping
+            (b) => !b.isStatic && !(b as Matter.Body).isSleeping,
           );
           if (!anyAwake) stopLoops();
         }, 750);
