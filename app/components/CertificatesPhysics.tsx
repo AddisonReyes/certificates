@@ -227,25 +227,10 @@ export function CertificatesPhysics({
       const maxW = Math.min(380, Math.floor(width * 0.42));
       const cardW = clamp(Math.floor(rawW), 84, maxW);
 
-      const WIDTH_PRESETS = [128, 256, 384, 640];
-      const pickWidth = (desired: number) => {
-        let best: number = WIDTH_PRESETS[0]!;
-        let bestD = Math.abs(best - desired);
-        for (const w of WIDTH_PRESETS) {
-          const d = Math.abs(w - desired);
-          if (d < bestD) {
-            best = w;
-            bestD = d;
-          }
-        }
-        return best;
-      };
       const spriteTexture = (src: string) => {
-        // Use Next's image optimizer to avoid decoding full-size certificate images as sprites.
-        const desiredW = Math.ceil(cardW * (render.options.pixelRatio || 1));
-        const w = pickWidth(desiredW);
-        const q = certificates.length >= 160 ? 55 : 65;
-        return `/_next/image?url=${encodeURIComponent(src)}&w=${w}&q=${q}`;
+        // Cloudflare Pages static export has no `/_next/image` optimizer endpoint.
+        // Use the original asset URL.
+        return src;
       };
 
       const mouse = Mouse.create(render.canvas);

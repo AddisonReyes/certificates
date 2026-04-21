@@ -1,24 +1,26 @@
 # AGENTS.md
 
-## Repo Snapshot
-- Next.js App Router app (`next@16.2.3`, `react@19.2.4`) with TypeScript.
-- Tailwind CSS v4 uses CSS-first setup: `postcss.config.mjs` + `app/globals.css` (`@import "tailwindcss";` + `@theme inline`). No `tailwind.config.*`.
+## Stack / Quirks
+- Next.js App Router (Next 16) + React 19 + TypeScript.
+- Tailwind CSS v4 is configured CSS-first: `postcss.config.mjs` + `app/globals.css` (`@import "tailwindcss";` + `@theme inline`). No `tailwind.config.*`.
 
-## Commands (npm)
+## Commands
 - Use `npm` (repo has `package-lock.json`).
-- Dev server: `npm run dev`
-- Production build: `npm run build` (Next performs typechecking during build)
-- Start prod server: `npm run start`
-- Lint: `npm run lint` (flat config in `eslint.config.mjs`)
-- Standalone typecheck (no script): `npx tsc --noEmit`
-- No tests are configured (no `test` script, no test files).
+- Dev: `npm run dev`
+- Build (includes typecheck): `npm run build`
+- Start: `npm run start`
+- Lint: `npm run lint` (flat config: `eslint.config.mjs`)
+- Extra typecheck (no script): `npx tsc --noEmit`
+- No tests are configured (no `test` script).
 
-## Code Layout / Entry Points
-- App entrypoints live in `app/`: `app/layout.tsx` (root layout + `metadata`), `app/page.tsx` (home).
-- Global styles in `app/globals.css` (Tailwind `@import "tailwindcss";` and `@theme inline`).
-- Certificate images live in `public/certs/*.webp` and are served at `/certs/<filename>.webp`.
-- Certificates list is generated server-side from the filesystem: `lib/certificates.ts` does `readdir(process.cwd()/public/certs)`, filters `*.webp`, sorts, and derives labels from filenames (`-` => space).
-- `app/page.tsx` sets `export const dynamic = "force-dynamic"` so the filesystem listing isn’t cached; switching to static/edge runtime will break/alter this behavior.
+## App Entry / Data Source
+- Entry points are `app/layout.tsx` and `app/page.tsx`.
+- Certificates are discovered at runtime from the filesystem: `lib/certificates.ts` reads `public/certs`, filters `*.webp`, sorts, and derives labels from filenames (`-` -> space).
+- `app/page.tsx` uses `export const dynamic = "force-dynamic"` so the filesystem listing isn’t cached; switching to static export / edge runtime will change or break certificate listing.
+
+## Assets / UI Gotchas
+- Add a certificate by dropping a `.webp` into `public/certs/`; it will be served at `/certs/<filename>.webp` and the visible label comes from the filename.
+- The “Physics” view dynamically imports `matter-js` and uses Next’s image optimizer endpoint (`/_next/image?...`) for sprite textures; changes that disable image optimization can break or regress this.
 
 ## Repo-Specific Gotchas
-- TS path alias `@/*` maps to the repo root (`tsconfig.json`: `"@/*": ["./*"]`), not to `src/`.
+- TS path alias `@/*` maps to the repo root (`tsconfig.json`: `"@/*": ["./*"]`), not `src/`.
