@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Certificate } from "../../lib/certificates";
 
 import type * as Matter from "matter-js";
@@ -10,8 +10,27 @@ type BodyWithCert = Matter.Body & {
   plugin?: { certificate?: Certificate; w?: number; h?: number };
 };
 
+const MAX_ACTIVE_PHYSICS_CERTS = 220;
+const MAX_HYDRATED_HEAVY_TEXTURES = 80;
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function pickPhysicsCertificates(certificates: Certificate[]) {
+  if (certificates.length <= MAX_ACTIVE_PHYSICS_CERTS) return certificates;
+
+  const picked: Certificate[] = [];
+  const lastIndex = certificates.length - 1;
+  for (let i = 0; i < MAX_ACTIVE_PHYSICS_CERTS; i++) {
+    const sourceIndex = Math.round(
+      (i * lastIndex) / Math.max(1, MAX_ACTIVE_PHYSICS_CERTS - 1),
+    );
+    const certificate = certificates[sourceIndex];
+    if (certificate) picked.push(certificate);
+  }
+
+  return picked;
 }
 
 export function CertificatesPhysics({
@@ -25,6 +44,13 @@ export function CertificatesPhysics({
   const [ready, setReady] = useState(false);
   const onOpenRef = useRef(onOpen);
   const lastSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const physicsCertificates = useMemo(
+    () => pickPhysicsCertificates(certificates),
+    [certificates],
+  );
+  const visibleCount = physicsCertificates.length;
+  const totalCount = certificates.length;
+  const isSampled = visibleCount < totalCount;
   type TextureInfo = {
     nw: number;
     nh: number;
@@ -134,7 +160,7 @@ export function CertificatesPhysics({
           background: "transparent",
           // Rendering 200+ sprites at high DPR is expensive; cap more aggressively.
           pixelRatio:
-            certificates.length >= 160
+            physicsCertificates.length >= 160
               ? 1
               : Math.min(window.devicePixelRatio || 1, 2),
         },
@@ -142,7 +168,7 @@ export function CertificatesPhysics({
 
       // With 200+ sprites, drawing at 60fps is a common bottleneck (esp. Firefox).
       // Use a throttled loop so both physics + render run at a capped rate.
-      const HEAVY = certificates.length >= 160;
+      const HEAVY = physicsCertificates.length >= 160;
       const TARGET_FPS = HEAVY ? 30 : 60;
       const STEP_MS = 1000 / TARGET_FPS;
 
@@ -221,7 +247,7 @@ export function CertificatesPhysics({
 
       // Card size scales with how many certificates are visible.
       // Fewer results => larger cards. More results => smaller cards.
-      const n = Math.max(1, certificates.length);
+      const n = Math.max(1, physicsCertificates.length);
       const columns = clamp(Math.ceil(Math.sqrt(n) * 1.25), 2, 11);
       const rawW = width / (columns + 0.75);
       const maxW = Math.min(380, Math.floor(width * 0.42));
@@ -329,10 +355,12 @@ export function CertificatesPhysics({
       // Strategy: spawn placeholder cards first (no textures), then hydrate sprites gradually once cards fall asleep.
       let hydrateTimer: number | null = null;
       let hydrating = false;
+      let hydratedTextures = 0;
       const hydrateSomeSprites = async () => {
         if (!HEAVY) return;
         if (cancelled) return;
         if (hydrating) return;
+        if (hydratedTextures >= MAX_HYDRATED_HEAVY_TEXTURES) return;
         hydrating = true;
         try {
           const bodies = Composite.allBodies(engine.world) as BodyWithCert[];
@@ -344,7 +372,10 @@ export function CertificatesPhysics({
               const tex = b.render.sprite?.texture;
               return !tex;
             })
-            .slice(0, 4);
+            .slice(
+              0,
+              Math.min(4, MAX_HYDRATED_HEAVY_TEXTURES - hydratedTextures),
+            );
 
           if (targets.length === 0) return;
 
@@ -375,6 +406,7 @@ export function CertificatesPhysics({
               xScale: w / info.nw,
               yScale: h / info.nh,
             };
+            hydratedTextures += 1;
           }
         } finally {
           hydrating = false;
@@ -384,11 +416,11 @@ export function CertificatesPhysics({
       const spawnNext = async () => {
         if (cancelled) return;
         const start = spawnAt;
-        if (start >= certificates.length) return;
-        const end = Math.min(start + BATCH, certificates.length);
+        if (start >= physicsCertificates.length) return;
+        const end = Math.min(start + BATCH, physicsCertificates.length);
         spawnAt = end;
 
-        const slice = certificates.slice(start, end);
+        const slice = physicsCertificates.slice(start, end);
 
         if (HEAVY) {
           for (let i = 0; i < slice.length; i++) {
@@ -430,7 +462,7 @@ export function CertificatesPhysics({
             Composite.add(engine.world, body);
           }
 
-          if (spawnAt >= certificates.length && hydrateTimer == null) {
+          if (spawnAt >= physicsCertificates.length && hydrateTimer == null) {
             hydrateTimer = window.setInterval(() => {
               void hydrateSomeSprites();
             }, 400);
@@ -440,6 +472,7 @@ export function CertificatesPhysics({
             spawnTimer = null;
             void spawnNext();
           }, INTERVAL_MS);
+          return;
         }
 
         const textures = slice.map((c) => spriteTexture(c.src));
@@ -479,9 +512,9 @@ export function CertificatesPhysics({
           const body = Bodies.rectangle(x, y, cardW, cardH, {
             restitution: 0.15,
             friction: 0.2,
-            frictionAir: certificates.length >= 160 ? 0.06 : 0.03,
+            frictionAir: physicsCertificates.length >= 160 ? 0.06 : 0.03,
             density: 0.002,
-            sleepThreshold: certificates.length >= 160 ? 20 : 40,
+            sleepThreshold: physicsCertificates.length >= 160 ? 20 : 40,
             angle,
             chamfer: { radius: Math.max(6, Math.floor(cardW * 0.05)) },
             render: {
@@ -512,7 +545,7 @@ export function CertificatesPhysics({
         idleTimer = window.setInterval(() => {
           if (cancelled) return;
           if (!loopsRunning) return;
-          if (spawnAt < certificates.length) return;
+          if (spawnAt < physicsCertificates.length) return;
 
           const bodies = Composite.allBodies(engine.world);
           const anyAwake = bodies.some(
@@ -566,25 +599,27 @@ export function CertificatesPhysics({
       if (rebuildTimer != null) window.clearTimeout(rebuildTimer);
       cleanup?.();
     };
-  }, [certificates]);
+  }, [physicsCertificates]);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-xs text-white/60">
-          Drag with mouse or touch. Double-click/double-tap opens.
+      <div className="flex flex-col justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 sm:flex-row sm:items-center">
+        <div className="text-sm text-white/65">
+          {isSampled
+            ? `Showing ${visibleCount} of ${totalCount} certificates in physics. Search to narrow the pile.`
+            : "Drag with mouse or touch. Double-click/double-tap opens."}
         </div>
-        <div className="text-xs text-white/40">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
           {ready ? "" : "Loading physics..."}
         </div>
       </div>
 
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+        className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-[0_12px_28px_rgba(0,0,0,0.1)]"
         style={{
-          height: "calc(100vh - 220px)",
-          minHeight: 800,
+          height: "calc(100vh - 240px)",
+          minHeight: 680,
           maxHeight: 1100,
         }}
       />
